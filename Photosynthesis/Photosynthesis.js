@@ -6,7 +6,7 @@ canvas.width = 1920;
 canvas.height = 1080;
 
 // 단계 설정
-let stage = 0; // 0: 빈 화면, 1: 나무 성장, 2: 벚꽃 피기, 3: 비 오기, 4: 색상 변화
+let stage = 0; // 0: 빈 화면, 1: 나무 성장, 2: 벚꽃 피기, 3: 비 오기, 4: 비 그친 후 색상 변화
 
 // 나무 데이터
 let branches = [];
@@ -16,6 +16,10 @@ let colorProgress = 0;  // 색상 변화 진행도 (0~1)
 
 // 애니메이션 프레임 관리
 let animationFrame;
+
+// 비 상태 관리
+let raindrops = [];
+let isRaining = false;
 
 // 클릭 이벤트
 canvas.addEventListener('click', () => {
@@ -29,13 +33,13 @@ canvas.addEventListener('click', () => {
         growTree();
     } else if (stage === 2) {
         colorProgress = 0;
-        animateColorChange('pink');
+        animateColorChange();
     } else if (stage === 3) {
+        isRaining = true;
         createRain();
         animateRain();
     } else if (stage === 4) {
-        colorProgress = 0;
-        stopRain();
+        isRaining = false;
     }
 });
 
@@ -61,7 +65,16 @@ function growTree() {
     if (growthProgress < 1) {
         growthProgress += 0.005; // 성장 속도 조절
         branches = [];
-        drawBranch(canvas.width / 2, canvas.height - 50, -90, maxDepth, growthProgress);
+
+        // 나무가 땅 위에서 자라도록 시작 위치 조정
+        const startY = canvas.height - 50; // 땅 위에서 시작
+        drawBranch(
+            canvas.width / 2,  // x 시작 위치
+            startY,            // y 시작 위치
+            -90,               // 수직 방향 (위쪽)
+            maxDepth,
+            0                  // 현재 깊이
+        );
         drawScene();
         animationFrame = requestAnimationFrame(growTree);
     } else {
@@ -71,44 +84,41 @@ function growTree() {
 }
 
 // 나무 가지 생성
-function drawBranch(startX, startY, angle, depth, progress) {
-    if (depth === 0) return;
+function drawBranch(x, y, angle, depth, currentDepth) {
+    if (currentDepth > depth) return;
 
-    // 나무 최대 높이 설정 (전체 화면의 2/3)
-    const maxTreeHeight = canvas.height * 2 / 3;
-
-    // 현재 나무의 높이 계산
-    const currentTreeHeight = (canvas.height - 50) - startY;
-
-    // 높이 제한 체크
-    if (currentTreeHeight > maxTreeHeight) return;
+    // 성장 진행도에 따른 가지의 현재 깊이 계산
+    const progressDepth = growthProgress * maxDepth;
+    if (currentDepth > progressDepth) return;
 
     // 나뭇가지 길이 계산
-    const length = (maxTreeHeight / maxDepth) * progress;
+    const maxBranchLength = 100;
+    const length = maxBranchLength * (1 - currentDepth / maxDepth);
+
+    // 현재 가지의 성장 비율 계산
+    const depthGrowth = Math.min(1, (growthProgress * maxDepth - currentDepth));
+
+    const currentLength = length * depthGrowth;
 
     // 끝점 계산
-    const endX = startX + length * Math.cos(angle * Math.PI / 180);
-    const endY = startY + length * Math.sin(angle * Math.PI / 180);
+    const endX = x + currentLength * Math.cos(angle * Math.PI / 180);
+    const endY = y + currentLength * Math.sin(angle * Math.PI / 180);
 
     // 나뭇가지 정보 저장
     branches.push({
-        startX,
-        startY,
-        endX,
-        endY,
-        depth,
-        angle
+        startX: x,
+        startY: y,
+        endX: endX,
+        endY: endY,
+        depth: currentDepth,
+        thickness: (maxDepth - currentDepth) * 0.8  // 나뭇가지 두께 감소
     });
 
-    // 성장 애니메이션을 위해 가지 하나만 위로 성장
-    if (depth === maxDepth) {
-        // 맨 위 가지에서 좌우로 가지치기 시작
-        drawBranch(endX, endY, angle - 15, depth - 1, progress);
-        drawBranch(endX, endY, angle + 15, depth - 1, progress);
-    } else {
-        // 약간의 각도 변경으로 자연스러운 성장 표현
-        drawBranch(endX, endY, angle - 5, depth - 1, progress);
-        drawBranch(endX, endY, angle + 5, depth - 1, progress);
+    // 좌우 가지 생성
+    if (depthGrowth >= 1) {
+        const branchAngle = 20;  // 가지 각도 조절
+        drawBranch(endX, endY, angle - branchAngle, depth, currentDepth + 1);
+        drawBranch(endX, endY, angle + branchAngle, depth, currentDepth + 1);
     }
 }
 
@@ -117,39 +127,40 @@ function renderTree() {
     branches.forEach(branch => {
         let color = 'white';
 
-        if (stage === 2 || stage === 3) {
+        if (stage === 2 || (stage === 3 && colorProgress < 1)) {
             // 벚꽃 피기 및 비 오는 동안 분홍색 유지
-            const ratio = ((maxDepth - branch.depth) / maxDepth);
-            const red = Math.floor(255);
-            const green = Math.floor(255 - 63 * ratio);
-            const blue = Math.floor(255 - 52 * ratio);
-            color = `rgb(${red}, ${green}, ${blue})`;
+            const ratio = colorProgress;
+            const red = 255;
+            const green = 255 - (63 * ratio); // 255 -> 192
+            const blue = 255 - (52 * ratio);  // 255 -> 203
+            color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
         } else if (stage === 4) {
             // 비 그친 후 색상 변화 (분홍색 -> 흰색 -> 초록색)
             if (colorProgress < 0.5) {
                 // 분홍색에서 흰색으로
-                const ratio = (colorProgress / 0.5) * ((maxDepth - branch.depth) / maxDepth);
-                const red = Math.floor(255);
-                const green = Math.floor((192 + 63 * ratio));
-                const blue = Math.floor((203 + 52 * ratio));
-                color = `rgb(${red}, ${green}, ${blue})`;
+                const ratio = (colorProgress / 0.5);
+                const red = 255;
+                const green = 192 + (63 * ratio); // 192 -> 255
+                const blue = 203 + (52 * ratio);  // 203 -> 255
+                color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
             } else {
                 // 흰색에서 초록색으로
-                const ratio = ((colorProgress - 0.5) / 0.5) * ((maxDepth - branch.depth) / maxDepth);
-                if (branch.depth > maxDepth / 2) {
-                    // 아래 부분은 흰색 유지
-                    color = 'white';
+                const ratio = ((colorProgress - 0.5) / 0.5);
+                if (branch.depth < maxDepth / 2) {
+                    // 잎 부분만 초록색으로 변경
+                    const red = 255 * (1 - ratio);   // 255 -> 0
+                    const green = 255;                // 255 유지
+                    const blue = 255 * (1 - ratio);   // 255 -> 0
+                    color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
                 } else {
-                    const red = Math.floor(255 * (1 - ratio));
-                    const green = Math.floor(255 * ratio);
-                    const blue = Math.floor(255 * (1 - ratio));
-                    color = `rgb(${red}, ${green}, ${blue})`;
+                    // 줄기는 흰색 유지
+                    color = 'white';
                 }
             }
         }
 
         ctx.strokeStyle = color;
-        ctx.lineWidth = branch.depth * 0.5; // 가지 두께 감소
+        ctx.lineWidth = branch.thickness;
         ctx.beginPath();
         ctx.moveTo(branch.startX, branch.startY);
         ctx.lineTo(branch.endX, branch.endY);
@@ -165,14 +176,15 @@ function drawScene() {
 }
 
 // 색상 변화 애니메이션
-function animateColorChange(targetColor) {
+function animateColorChange() {
     if (colorProgress < 1) {
-        colorProgress += 0.005; // 색상 변화 속도 조절
+        colorProgress += 0.005; // 색상 변화 속도 조절 (느리게)
         drawScene();
-        animationFrame = requestAnimationFrame(() => animateColorChange(targetColor));
+        animationFrame = requestAnimationFrame(animateColorChange);
     } else {
         cancelAnimationFrame(animationFrame);
         if (stage === 3) {
+            isRaining = true;
             createRain();
             animateRain();
         } else if (stage === 4) {
@@ -182,7 +194,6 @@ function animateColorChange(targetColor) {
 }
 
 // 비 애니메이션
-let raindrops = [];
 function createRain() {
     raindrops = [];
     for (let i = 0; i < 300; i++) {
@@ -198,41 +209,35 @@ function createRain() {
 function animateRain() {
     drawScene();
     drawRain();
-    animationFrame = requestAnimationFrame(animateRain);
+    if (raindrops.length > 0 || isRaining) {
+        animationFrame = requestAnimationFrame(animateRain);
+    } else {
+        cancelAnimationFrame(animationFrame);
+        colorProgress = 0;
+        animateColorChange();
+    }
 }
 
 // 비 그리기
 function drawRain() {
     ctx.strokeStyle = 'lightblue';
     ctx.lineWidth = 1;
-    raindrops.forEach((drop) => {
+    for (let i = raindrops.length - 1; i >= 0; i--) {
+        const drop = raindrops[i];
         ctx.beginPath();
         ctx.moveTo(drop.x, drop.y);
         ctx.lineTo(drop.x, drop.y + drop.length);
         ctx.stroke();
         drop.y += drop.speed;
         if (drop.y > canvas.height) {
-            drop.y = Math.random() * -canvas.height;
-        }
-    });
-}
-
-// 비 멈추기 및 색상 변화 시작
-function stopRain() {
-    if (raindrops.length > 0) {
-        raindrops.forEach((drop, index) => {
-            drop.speed *= 0.98; // 비의 속도를 점차 감소시킴
-            if (drop.speed < 0.5) {
-                raindrops.splice(index, 1);
+            if (isRaining) {
+                // 비가 오는 동안에는 빗방울을 위로 재생성
+                drop.y = Math.random() * -canvas.height;
+            } else {
+                // 비가 그치면 빗방울 제거
+                raindrops.splice(i, 1);
             }
-        });
-        drawScene();
-        drawRain();
-        animationFrame = requestAnimationFrame(stopRain);
-    } else {
-        cancelAnimationFrame(animationFrame);
-        colorProgress = 0;
-        animateColorChange('green');
+        }
     }
 }
 
