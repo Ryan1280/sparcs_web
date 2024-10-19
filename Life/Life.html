@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>세포 분열 시뮬레이션</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            cursor: pointer;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            background-color: #ffffff; /* 흰색 배경 */
+            border: 2px solid #000000; /* 검은색 테두리 */
+            border-radius: 50%; /* 원형 모양 */
+            position: absolute;
+            transform-origin: center;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .cell.active {
+            opacity: 1;
+            animation: cellDivide 0.3s forwards;
+        }
+
+        .cell::before {
+            content: '';
+            width: 10px; /* 검은 점 크기 */
+            height: 10px;
+            background-color: #000000; /* 검은색 점 */
+            border-radius: 50%; /* 점을 원형으로 */
+            position: absolute;
+        }
+
+        @keyframes cellDivide {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes cellCollision {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(var(--dx), var(--dy)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" onclick="divideAllCells()">
+        <div class="cell active" id="cell1" data-label="1" data-division-count="0" style="left: 50%; top: 50%; transform: translate(-50%, -50%);"></div>
+    </div>
+    <script>
+        const cellSize = 50; // 세포 크기
+        const divisionRadius = 100; // 세포 분열 반경
+        let cellCount = 1;
+
+        function divideAllCells() {
+            const cells = document.querySelectorAll('.cell');
+            const newCells = [];
+
+            // 모든 세포에 대해 분열 수행
+            cells.forEach(cell => {
+                const newCell = divideCell(cell);
+                if (newCell) newCells.push(newCell);
+            });
+
+            // 새로 생성된 세포들에 대해 즉시 충돌 처리
+            newCells.forEach(newCell => {
+                handleImmediateCollision(newCell);
+            });
+        }
+
+        function divideCell(cell) {
+            const container = document.querySelector('.container');
+            const cells = document.querySelectorAll('.cell');
+
+            // 부모 세포 정보 가져오기
+            const parentLabel = cell.getAttribute('data-label');
+            let divisionCount = parseInt(cell.getAttribute('data-division-count')) || 0;
+
+            // 분열 횟수 증가
+            divisionCount++;
+            cell.setAttribute('data-division-count', divisionCount);
+
+            // 새로운 세포 라벨 생성
+            const newLabel = parentLabel + '-' + divisionCount;
+
+            // 새로운 세포 생성 위치 계산
+            const parentCellRect = cell.getBoundingClientRect();
+            let newPosition;
+            let attempts = 0;
+            const maxAttempts = 100;
+
+            do {
+                const angle = Math.random() * 2 * Math.PI; // 랜덤 각도
+                const distance = divisionRadius + cellSize; // 최소 거리 설정 (세포 크기만큼 떨어지도록)
+                const offsetX = Math.cos(angle) * distance;
+                const offsetY = Math.sin(angle) * distance;
+
+                newPosition = {
+                    x: parentCellRect.left + offsetX - container.offsetLeft,
+                    y: parentCellRect.top + offsetY - container.offsetTop
+                };
+
+                attempts++;
+            } while (attempts < maxAttempts && isOverlapping(newPosition, cells));
+
+            // 위치를 찾았으면 새로운 세포 생성
+            return createNewCell(newPosition, container, newLabel);
+        }
+
+        function isOverlapping(position, cells) {
+            for (let cell of cells) {
+                const cellRect = cell.getBoundingClientRect();
+                const dx = cellRect.left - position.x;
+                const dy = cellRect.top - position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < cellSize + 5) { // 5px 여유를 두어 완전 겹침 방지
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function createNewCell(position, container, label) {
+            const newCell = document.createElement('div');
+            newCell.className = 'cell active';
+            newCell.id = `cell${++cellCount}`;
+            newCell.setAttribute('data-label', label);
+            newCell.setAttribute('data-division-count', 0); // 새로운 세포의 분열 횟수는 0부터 시작
+
+            // 초기 위치 설정
+            newCell.style.left = `${position.x}px`;
+            newCell.style.top = `${position.y}px`;
+            container.appendChild(newCell);
+
+            // 새로 생성된 세포에 클릭 이벤트 추가
+            newCell.addEventListener('click', function(event) {
+                event.stopPropagation(); // 이벤트 버블링 방지
+                divideAllCells();
+            });
+
+            // 지속적인 충돌 감지 시작
+            setInterval(() => {
+                handleContinuousCollision(newCell);
+            }, 100); // 0.1초마다 충돌 검사
+
+            return newCell;
+        }
+
+        function handleImmediateCollision(newCell) {
+            const cells = document.querySelectorAll('.cell');
+            checkAndResolveCollision(newCell, cells);
+        }
+
+        function handleContinuousCollision(newCell) {
+            const cells = document.querySelectorAll('.cell');
+            checkAndResolveCollision(newCell, cells);
+        }
+
+        function checkAndResolveCollision(newCell, cells) {
+            const newCellRect = newCell.getBoundingClientRect();
+
+            cells.forEach(cell => {
+                if (cell !== newCell) {
+                    const cellRect = cell.getBoundingClientRect();
+                    const dx = cellRect.left - newCellRect.left;
+                    const dy = cellRect.top - newCellRect.top;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < cellSize + 5) { // 겹쳐있는 경우를 감지
+                        // 반대 방향으로 밀어내기
+                        const angle = Math.atan2(dy, dx);
+                        const moveDistance = cellSize - distance + 5; // 여유 공간 추가
+
+                        const moveX = Math.cos(angle) * moveDistance;
+                        const moveY = Math.sin(angle) * moveDistance;
+
+                        // CSS 변수를 사용하여 애니메이션 적용
+                        newCell.style.setProperty('--dx', `${moveX}px`);
+                        newCell.style.setProperty('--dy', `${moveY}px`);
+                        newCell.style.animation = 'cellCollision 0.3s forwards';
+
+                        // 위치 업데이트
+                        const currentLeft = parseFloat(newCell.style.left);
+                        const currentTop = parseFloat(newCell.style.top);
+
+                        newCell.style.left = `${currentLeft + moveX}px`;
+                        newCell.style.top = `${currentTop + moveY}px`;
+
+                        // 기존 세포도 밀어내기 처리
+                        const reverseAngle = angle + Math.PI; // 반대 방향으로 기존 세포 밀어내기
+                        const existingMoveX = Math.cos(reverseAngle) * moveDistance;
+                        const existingMoveY = Math.sin(reverseAngle) * moveDistance;
+                        cell.style.left = `${parseFloat(cell.style.left) + existingMoveX}px`;
+                        cell.style.top = `${parseFloat(cell.style.top) + existingMoveY}px`;
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
