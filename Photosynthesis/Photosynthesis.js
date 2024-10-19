@@ -127,14 +127,18 @@ function renderTree() {
     branches.forEach(branch => {
         let color = 'white';
 
-        if (stage === 2 || (stage === 3 && colorProgress < 1)) {
-            // 벚꽃 피기 및 비 오는 동안 분홍색 유지
-            const ratio = colorProgress;
-            const red = 255;
-            const green = 255 - (63 * ratio); // 255 -> 192
-            const blue = 255 - (52 * ratio);  // 255 -> 203
-            color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
+        if (stage === 2 || (stage === 3)) {
+
+            const depthRatio = branch.depth / maxDepth;
+            if (depthRatio > 0.5) {
+                const ratio = (depthRatio - 0.5) * 2 * colorProgress; // 0 ~ 1
+                const red = 255;
+                const green = 255 - (63 * ratio); // 255 -> 192
+                const blue = 255 - (52 * ratio);  // 255 -> 203
+                color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
+            }
         } else if (stage === 4) {
+            const depthRatio = branch.depth / maxDepth;
             // 비 그친 후 색상 변화 (분홍색 -> 흰색 -> 초록색)
             if (colorProgress < 0.5) {
                 // 분홍색에서 흰색으로
@@ -144,18 +148,12 @@ function renderTree() {
                 const blue = 203 + (52 * ratio);  // 203 -> 255
                 color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
             } else {
-                // 흰색에서 초록색으로
-                const ratio = ((colorProgress - 0.5) / 0.5);
-                if (branch.depth < maxDepth / 2) {
-                    // 잎 부분만 초록색으로 변경
-                    const red = 255 * (1 - ratio);   // 255 -> 0
-                    const green = 255;                // 255 유지
-                    const blue = 255 * (1 - ratio);   // 255 -> 0
-                    color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
-                } else {
-                    // 줄기는 흰색 유지
-                    color = 'white';
-                }
+               // 흰색에서 초록색으로
+               const ratio = ((colorProgress - 0.5) / 0.5);
+               const red = 255 * (1 - ratio);   // 255 -> 0
+               const green = 255;                // 255 유지
+               const blue = 255 * (1 - ratio);   // 255 -> 0
+               color = `rgb(${Math.floor(red)}, ${Math.floor(green)}, ${Math.floor(blue)})`;
             }
         }
 
@@ -211,10 +209,10 @@ function animateRain() {
     drawRain();
     if (raindrops.length > 0 || isRaining) {
         animationFrame = requestAnimationFrame(animateRain);
+    } else if (!isRaining) {
+        animationFrame = requestAnimationFrame(animateColorChange)
     } else {
         cancelAnimationFrame(animationFrame);
-        colorProgress = 0;
-        animateColorChange();
     }
 }
 
